@@ -67,11 +67,11 @@ def should_search(state) -> Literal["tools", "outliner"]:
 
 
 @st.cache_resource(show_spinner=False)
-def build_graph(model_name: str, gemini_api_key: str, tavily_api_key: str):
+def build_graph(gemini_api_key: str, tavily_api_key: str):
     os.environ["GOOGLE_API_KEY"] = gemini_api_key
     os.environ["TAVILY_API_KEY"] = tavily_api_key
 
-    llm = ChatGoogleGenerativeAI(model=model_name, google_api_key=gemini_api_key)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=gemini_api_key)
     tools = [TavilySearchResults(max_results=5)]
 
     search_agent = create_agent(llm, tools, search_template)
@@ -100,26 +100,22 @@ def build_graph(model_name: str, gemini_api_key: str, tavily_api_key: str):
 def main():
     st.set_page_config(page_title="LangGraph Writer Agent")
     st.title("LangGraph Writer Agent")
-    st.write("Provide your Gemini and Tavily settings, then request an article.")
+    st.write("Provide your Gemini and Tavily API keys, then request an article.")
 
-    gemini_model = st.text_input("Gemini model", value="gemini-2.5-flash")
+    gemini_api_key = st.text_input("Gemini API Key", type="password")
     tavily_api_key = st.text_input("Tavily API Key", type="password")
     user_prompt = st.text_area("What article should I write for you?")
-    gemini_api_key = os.getenv("GOOGLE_API_KEY", "").strip()
 
     if st.button("Generate Article"):
-        if not gemini_model.strip() or not tavily_api_key.strip():
-            st.error("Please fill Gemini model and Tavily API key.")
-            return
-        if not gemini_api_key:
-            st.error("Set your Gemini key in environment variable GOOGLE_API_KEY.")
+        if not gemini_api_key.strip() or not tavily_api_key.strip():
+            st.error("Please fill Gemini API key and Tavily API key.")
             return
         if not user_prompt.strip():
             st.error("Please enter an article request.")
             return
 
         try:
-            graph = build_graph(gemini_model.strip(), gemini_api_key.strip(), tavily_api_key.strip())
+            graph = build_graph(gemini_api_key.strip(), tavily_api_key.strip())
             result = graph.invoke({"messages": [HumanMessage(content=user_prompt.strip())]})
             final_message = result["messages"][-1]
             st.subheader("Generated Article")

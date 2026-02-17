@@ -71,7 +71,7 @@ def build_graph(gemini_api_key: str, tavily_api_key: str):
     os.environ["GOOGLE_API_KEY"] = gemini_api_key
     os.environ["TAVILY_API_KEY"] = tavily_api_key
 
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=gemini_api_key)
+    llm = ChatGoogleGenerativeAI(model="gemini-3.0-flash", google_api_key=gemini_api_key)
     tools = [TavilySearchResults(max_results=5)]
 
     search_agent = create_agent(llm, tools, search_template)

@@ -1,0 +1,6 @@
+streamlit
+langgraph
+langchain
+langchain-community
+langchain-google-genai
+tavily-python

@@ -33,7 +33,9 @@ def create_agent(llm, tools, system_message: str):
 
 search_template = """Your job is to search the web for related news that would be relevant to generate the article described by the user.
 
-                  NOTE: Do not write the article. Just search the web for related news if needed and then forward that news to the outliner node.
+                  NOTE: Do not write the article.
+                  Use Tavily search if needed, but call tools at most once.
+                  Then return a plain-text summary of the key findings for the outliner node.
                   """
 
 outliner_template = """Your job is to take as input a list of articles from the web along with users instruction on what article they want to write and generate an outline
@@ -46,8 +48,6 @@ writer_template = """Your job is to write an article, do it in this format:
                         BODY: <body>
 
                       NOTE: Do not copy the outline. You need to write the article with the info provided by the outline.
-
-                       ```
                     """
             
 def agent_node(state, agent, name):
@@ -60,10 +60,25 @@ def should_search(state) -> Literal["tools", "outliner"]:
     messages = state['messages']
     last_message = messages[-1]
     # If the LLM makes a tool call, then we route to the "tools" node
-    if last_message.tool_calls:
+    if getattr(last_message, "tool_calls", None):
         return "tools"
     # Otherwise, we stop (send state to outliner)
     return "outliner"
+
+
+def message_text(message) -> str:
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        text_parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                text_parts.append(str(item.get("text", "")))
+            elif isinstance(item, str):
+                text_parts.append(item)
+        return "\n".join(part for part in text_parts if part).strip()
+    return str(content).strip()
 
 
 @st.cache_resource(show_spinner=False)
@@ -71,7 +86,7 @@ def build_graph(gemini_api_key: str, tavily_api_key: str):
     os.environ["GOOGLE_API_KEY"] = gemini_api_key
     os.environ["TAVILY_API_KEY"] = tavily_api_key
 
-    llm = ChatGoogleGenerativeAI(model="gemini-3.0", google_api_key=gemini_api_key)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=gemini_api_key)
     tools = [TavilySearchResults(max_results=5)]
 
     search_agent = create_agent(llm, tools, search_template)
@@ -115,11 +130,27 @@ def main():
             return
 
         try:
-            graph = build_graph(gemini_api_key.strip(), tavily_api_key.strip())
-            result = graph.invoke({"messages": [HumanMessage(content=user_prompt.strip())]})
-            final_message = result["messages"][-1]
-            st.subheader("Generated Article")
-            st.write(final_message.content)
+            with st.spinner("Generating article..."):
+                graph = build_graph(gemini_api_key.strip(), tavily_api_key.strip())
+                result = graph.invoke(
+                    {"messages": [HumanMessage(content=user_prompt.strip())]},
+                    config={"recursion_limit": 50},
+                )
+
+            messages = result.get("messages", [])
+            output_text = ""
+            for msg in reversed(messages):
+                output_text = message_text(msg)
+                if output_text:
+                    break
+
+            if output_text:
+                st.subheader("Generated Article")
+                st.write(output_text)
+            else:
+                st.error("The model returned an empty response. Try again with a more specific prompt.")
+                with st.expander("Debug info"):
+                    st.write(messages)
         except Exception as exc:
             st.error(f"Something went wrong: {exc}")
 
